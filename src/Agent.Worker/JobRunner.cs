@@ -190,11 +190,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
 
                             var createdContainer = await dockerManger.DockerCreate(dockerInitContext, dockerImage);
                             dockerInitContext.Docker.ContainerId = createdContainer.ContainerId;
+                            dockerInitContext.Docker.ContainerName = createdContainer.ContainerName;
+                            dockerInitContext.Docker.CurrentUserName = createdContainer.CurrentUserName;
+                            dockerInitContext.Docker.CurrentUserId = createdContainer.CurrentUserId;
 
                             int startExitCode = await dockerManger.DockerStart(dockerInitContext, dockerInitContext.Docker.ContainerId);
                             if (startExitCode != 0)
                             {
                                 throw new InvalidOperationException($"Docker start fail with exit code {startExitCode}");
+                            }
+
+                            int execExitCode = await dockerManger.DockerExec(dockerInitContext, dockerInitContext.Docker.ContainerId, string.Empty, $"useradd -m -u {createdContainer.CurrentUserId} {createdContainer.CurrentUserName}_VSTSContainer");
+                            if (execExitCode != 0)
+                            {
+                                throw new InvalidOperationException($"Docker exec fail with exit code {execExitCode}");
                             }
 
                             dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Docker Container"));

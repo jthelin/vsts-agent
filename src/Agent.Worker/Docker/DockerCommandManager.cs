@@ -13,6 +13,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Docker
         Task<DockerInfo> DockerCreate(IExecutionContext context, string image);
         Task<int> DockerStart(IExecutionContext context, string containerId);
         Task<int> DockerStop(IExecutionContext context, string containerId);
+        Task<int> DockerExec(IExecutionContext context, string containerId, string options, string command);
     }
 
     public class DockerCommandManager : AgentService, IDockerCommandManager
@@ -38,10 +39,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Docker
             string containerId = (await ExecuteDockerCommandAsync(context, "create", dockerArgs)).FirstOrDefault();
             ArgUtil.NotNullOrEmpty(containerId, nameof(DockerInfo.ContainerId));
 
+            string username = (await ExecuteCommandAsync(context, "whoami", string.Empty)).FirstOrDefault();
+            ArgUtil.NotNullOrEmpty(username, nameof(DockerInfo.CurrentUserName));
+
+            string uid = (await ExecuteCommandAsync(context, "id", $"-u {username}")).FirstOrDefault();
+            ArgUtil.NotNullOrEmpty(uid, nameof(DockerInfo.CurrentUserId));
+
             DockerInfo docker = new DockerInfo()
             {
                 ContainerName = context.Docker.ContainerName,
                 ContainerId = containerId,
+                CurrentUserName = username,
+                CurrentUserId = uid,
             };
 
             return docker;
@@ -55,6 +64,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Docker
         public async Task<int> DockerStop(IExecutionContext context, string containerId)
         {
             return await ExecuteDockerCommandAsync(context, "stop", containerId, context.CancellationToken);
+        }
+
+        public async Task<int> DockerExec(IExecutionContext context, string containerId, string options, string command)
+        {
+            return await ExecuteDockerCommandAsync(context, "exec", $"{options} {containerId} {command}", context.CancellationToken);
         }
 
         private async Task<int> ExecuteDockerCommandAsync(IExecutionContext context, string command, string options, CancellationToken cancellationToken = default(CancellationToken))
@@ -116,6 +130,47 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Docker
             await processInvoker.ExecuteAsync(
                             workingDirectory: context.Variables.Agent_WorkFolder,
                             fileName: _dockerPath,
+                            arguments: arg,
+                            environment: null,
+                            requireExitCodeZero: true,
+                            outputEncoding: null,
+                            cancellationToken: CancellationToken.None);
+
+            return output;
+        }
+
+        private async Task<List<string>> ExecuteCommandAsync(IExecutionContext context, string command, string arg)
+        {
+            context.Command($"{command} {arg}");
+
+            List<string> output = new List<string>();
+            object outputLock = new object();
+            var processInvoker = HostContext.CreateService<IProcessInvoker>();
+            processInvoker.OutputDataReceived += delegate (object sender, ProcessDataReceivedEventArgs message)
+            {
+                if (!string.IsNullOrEmpty(message.Data))
+                {
+                    lock (outputLock)
+                    {
+                        output.Add(message.Data);
+                    }
+                }
+            };
+
+            processInvoker.ErrorDataReceived += delegate (object sender, ProcessDataReceivedEventArgs message)
+            {
+                if (!string.IsNullOrEmpty(message.Data))
+                {
+                    lock (outputLock)
+                    {
+                        output.Add(message.Data);
+                    }
+                }
+            };
+
+            await processInvoker.ExecuteAsync(
+                            workingDirectory: context.Variables.Agent_WorkFolder,
+                            fileName: command,
                             arguments: arg,
                             environment: null,
                             requireExitCodeZero: true,

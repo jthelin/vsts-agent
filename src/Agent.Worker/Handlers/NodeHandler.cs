@@ -94,7 +94,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Handlers
                         envOptions += $" -e \"{env.Key}={env.Value.Replace("\"", "\\\"")}\"";
                     }
 
-                    arguments = $"exec {envOptions} {docker.ContainerId} node {StringUtil.Format(@"""{0}""", target.Replace(@"""", @"\"""))}";
+                    arguments = $"exec -u {docker.CurrentUserId} {envOptions} {docker.ContainerId} node {StringUtil.Format(@"""{0}""", target.Replace(@"""", @"\"""))}";
                 }
 
 #if OS_WINDOWS
