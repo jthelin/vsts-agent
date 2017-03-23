@@ -172,13 +172,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 {
                     jobContext.Docker.ContainerName = $"VSTS_{jobContext.Variables.System_HostType.ToString()}_{message.RequestId}";
 
-                    var dockerInitContext = jobContext.CreateChild(Guid.NewGuid(), "Initialize Docker Container");
+                    var dockerInitContext = jobContext.CreateChild(Guid.NewGuid(), "Initialize Container");
                     using (var register = jobContext.CancellationToken.Register(() => { dockerInitContext.CancelToken(); }))
                     {
                         try
                         {
                             dockerInitContext.Start();
-                            dockerInitContext.Section(StringUtil.Loc("StepStarting", "Initialize Docker Container"));
+                            dockerInitContext.Section(StringUtil.Loc("StepStarting", "Initialize Container"));
                             dockerInitContext.Output($"Run job in Docker use image: {dockerImage}");
 
                             var dockerManger = HostContext.GetService<IDockerCommandManager>();
@@ -206,7 +206,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                                 throw new InvalidOperationException($"Docker exec fail with exit code {execExitCode}");
                             }
 
-                            dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Docker Container"));
+                            dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Container"));
                             dockerInitContext.Complete();
                         }
                         catch (OperationCanceledException ex) when (jobContext.CancellationToken.IsCancellationRequested)
@@ -215,7 +215,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                             Trace.Error($"Caught cancellation exception from Docker Initialization: {ex}");
                             dockerInitContext.Error(ex);
                             dockerInitContext.Result = TaskResult.Canceled;
-                            dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Docker Container"));
+                            dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Container"));
                             dockerInitContext.Complete();
 
                             return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Canceled);
@@ -226,7 +226,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                             Trace.Error($"Caught exception from Docker Initialization: {ex}");
                             dockerInitContext.Error(ex);
                             dockerInitContext.Result = TaskResult.Failed;
-                            dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Docker Container"));
+                            dockerInitContext.Section(StringUtil.Loc("StepFinishing", "Initialize Container"));
                             dockerInitContext.Complete();
 
                             return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Failed);
