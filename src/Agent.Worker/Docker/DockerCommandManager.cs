@@ -35,7 +35,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Docker
 
         public async Task<DockerInfo> DockerCreate(IExecutionContext context, string image)
         {
-            string dockerArgs = $"--name {context.Docker.ContainerName} --rm -v /var/run/docker.sock:/var/run/docker.sock -v {context.Variables.Agent_WorkFolder}:{context.Variables.Agent_WorkFolder} {image} ping 127.0.0.1 -i 86400 -q";
+            string dockerArgs = $"--name {context.Docker.ContainerName} --rm -v /var/run/docker.sock:/var/run/docker.sock -v {context.Variables.Agent_WorkFolder}:{context.Variables.Agent_WorkFolder} -v {IOUtil.GetExternalsPath()}:{IOUtil.GetExternalsPath()} {image} ping 127.0.0.1 -i 86400 -q";
             string containerId = (await ExecuteDockerCommandAsync(context, "create", dockerArgs)).FirstOrDefault();
             ArgUtil.NotNullOrEmpty(containerId, nameof(DockerInfo.ContainerId));
 
