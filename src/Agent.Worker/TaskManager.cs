@@ -174,6 +174,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         public string Description { get; set; }
         public string HelpMarkDown { get; set; }
         public string Author { get; set; }
+        public string[] OutputVariables { get; set; }
 
         public TaskInputDefinition[] Inputs { get; set; }
         public ExecutionData PreJobExecution { get; set; }

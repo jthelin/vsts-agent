@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Linq;
 
 namespace Microsoft.VisualStudio.Services.Agent.Worker
 {
@@ -21,9 +22,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         CancellationToken CancellationToken { get; }
         List<ServiceEndpoint> Endpoints { get; }
         List<SecureFile> SecureFiles { get; }
-        PlanFeatures Features { get; }
         Variables Variables { get; }
         Variables TaskVariables { get; }
+        HashSet<string> OutputVariables { get; }
         List<IAsyncCommandContext> AsyncCommands { get; }
         List<string> PrependPath { get; }
 
@@ -40,6 +41,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         // timeline record update methods
         void Start(string currentOperation = null);
         TaskResult Complete(TaskResult? result = null, string currentOperation = null);
+        void SetVariable(string name, string value, bool isSecret, bool isOutput);
         void SetTimeout(TimeSpan? timeout);
         void AddIssue(Issue issue);
         void Progress(int percentage, string currentOperation = null);
@@ -54,6 +56,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         private readonly Dictionary<Guid, TimelineRecord> _detailRecords = new Dictionary<Guid, TimelineRecord>();
         private readonly object _loggerLock = new object();
         private readonly List<IAsyncCommandContext> _asyncCommands = new List<IAsyncCommandContext>();
+        private readonly HashSet<string> _outputvariables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private IPagingLogger _logger;
         private ISecretMasker _secretMasker;
@@ -74,6 +77,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         public List<SecureFile> SecureFiles { get; private set; }
         public Variables Variables { get; private set; }
         public Variables TaskVariables { get; private set; }
+        public HashSet<string> OutputVariables => _outputvariables;
         public bool WriteDebug { get; private set; }
         public List<string> PrependPath { get; private set; }
 
@@ -109,8 +113,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             }
         }
 
-        public PlanFeatures Features { get; private set; }
-
         public override void Initialize(IHostContext hostContext)
         {
             base.Initialize(hostContext);
@@ -130,7 +132,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
 
             var child = new ExecutionContext();
             child.Initialize(HostContext);
-            child.Features = Features;
             child.Variables = Variables;
             child.Endpoints = Endpoints;
             child.SecureFiles = SecureFiles;
@@ -166,6 +167,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 Result = result;
             }
 
+            // warn on missing output variables
+            List<string> missingOutputVariables = OutputVariables.Where(v => !_record.Variables.Keys.Contains(v)).ToList();
+            if (missingOutputVariables.Count > 0)
+            {
+                this.Warning($"Missing output variables: {string.Join(", ", missingOutputVariables)}");
+            }
+
             // report total delay caused by server throttling.
             if (_totalThrottlingDelayInMilliseconds > 0)
             {
@@ -199,6 +207,27 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             _logger.End();
 
             return Result.Value;
+        }
+
+        public void SetVariable(string name, string value, bool isSecret, bool isOutput)
+        {
+            ArgUtil.NotNullOrEmpty(name, nameof(name));
+            if (isOutput)
+            {
+                _record.Variables[name] = new VariableValue()
+                {
+                    Value = value,
+                    IsSecret = isSecret
+                };
+                _jobServerQueue.QueueTimelineRecordUpdate(_mainTimelineId, _record);
+
+                //name = $"{_record.RefName}.{name}";
+                Variables.Set(name, value, secret: isSecret);
+            }
+            else
+            {
+                Variables.Set(name, value, secret: isSecret);
+            }
         }
 
         public void SetTimeout(TimeSpan? timeout)
@@ -303,9 +332,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             ArgUtil.NotNull(message.Plan, nameof(message.Plan));
 
             _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token);
-
-            // Features
-            Features = ApiUtil.GetFeatures(message.Plan);
 
             // Endpoints
             Endpoints = message.Environment.Endpoints;

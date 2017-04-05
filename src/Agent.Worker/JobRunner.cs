@@ -91,7 +91,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 {
                     Trace.Error(ex);
                     jobContext.Error(ex);
-                    return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Failed);
+                    return CompleteJob(jobContext, message.JobName, TaskResult.Failed);
                 }
 
                 // Set agent variables.
@@ -184,7 +184,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     // don't log error issue to job ExecutionContext, since server owns the job level issue
                     Trace.Error($"Job is canclled during initialize.");
                     Trace.Error($"Caught exception: {ex}");
-                    return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Canceled);
+                    return CompleteJob(jobContext, message.JobName, TaskResult.Canceled);
                 }
                 catch (Exception ex)
                 {
@@ -192,7 +192,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     // don't log error issue to job ExecutionContext, since server owns the job level issue
                     Trace.Error($"Job initialize failed.");
                     Trace.Error($"Caught exception from {nameof(jobExtension.InitializeJob)}: {ex}");
-                    return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Failed);
+                    return CompleteJob(jobContext, message.JobName, TaskResult.Failed);
                 }
 
                 // trace out all steps
@@ -221,7 +221,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     // Log the error and fail the job.
                     Trace.Error($"Caught exception from pre-job steps {nameof(StepsRunner)}: {ex}");
                     jobContext.Error(ex);
-                    return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Failed);
+                    return CompleteJob(jobContext, message.JobName, TaskResult.Failed);
                 }
 
                 Trace.Info($"Job result after all pre-job steps finish: {jobContext.Result}");
@@ -244,7 +244,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                         // Log the error and fail the job.
                         Trace.Error($"Caught exception from job steps {nameof(StepsRunner)}: {ex}");
                         jobContext.Error(ex);
-                        return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Failed);
+                        return CompleteJob(jobContext, message.JobName, TaskResult.Failed);
                     }
                 }
                 else
@@ -273,95 +273,40 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     // Log the error and fail the job.
                     Trace.Error($"Caught exception from post-job steps {nameof(StepsRunner)}: {ex}");
                     jobContext.Error(ex);
-                    return await CompleteJobAsync(jobServer, jobContext, message, TaskResult.Failed);
+                    return CompleteJob(jobContext, message.JobName, TaskResult.Failed);
                 }
 
                 Trace.Info($"Job result after all post-job steps finish: {jobContext.Result}");
 
                 // Complete the job.
                 Trace.Info("Completing the job execution context.");
-                return await CompleteJobAsync(jobServer, jobContext, message);
+                return CompleteJob(jobContext, message.JobName);
             }
             finally
             {
-                await ShutdownQueue();
+                if (_jobServerQueue != null)
+                {
+                    try
+                    {
+                        Trace.Info("Shutting down the job server queue.");
+                        // ShutdownAsync() will throw if timeline update failed on queue drain
+                        // and any of the timeline records has output variable been set.
+                        await _jobServerQueue.ShutdownAsync();
+                    }
+                    finally
+                    {
+                        _jobServerQueue = null; // Prevent multiple attempts.
+                    }
+                }
             }
         }
 
-        private async Task<TaskResult> CompleteJobAsync(IJobServer jobServer, IExecutionContext jobContext, AgentJobRequestMessage message, TaskResult? taskResult = null)
+        private TaskResult CompleteJob(IExecutionContext jobContext, string jobName, TaskResult? taskResult = null)
         {
             // Clean TEMP.
             _tempDirectoryManager?.CleanupTempDirectory(jobContext);
-
-            jobContext.Section(StringUtil.Loc("StepFinishing", message.JobName));
-            TaskResult result = jobContext.Complete(taskResult);
-
-            if (!jobContext.Features.HasFlag(PlanFeatures.JobCompletedPlanEvent))
-            {
-                Trace.Info($"Skip raise job completed event call from worker because Plan version is {message.Plan.Version}");
-                return result;
-            }
-
-            await ShutdownQueue();
-
-            Trace.Info("Raising job completed event.");
-            IEnumerable<Variable> outputVariables = jobContext.Variables.GetOutputVariables();
-            //var webApiVariables = outputVariables.ToJobCompletedEventOutputVariables();
-            //var jobCompletedEvent = new JobCompletedEvent(message.RequestId, message.JobId, result, webApiVariables);
-            var jobCompletedEvent = new JobCompletedEvent(message.RequestId, message.JobId, result);
-
-            var completeJobRetryLimit = 5;
-            var exceptions = new List<Exception>();
-            while (completeJobRetryLimit-- > 0)
-            {
-                try
-                {
-                    await jobServer.RaisePlanEventAsync(message.Plan.ScopeIdentifier, message.Plan.PlanType, message.Plan.PlanId, jobCompletedEvent, default(CancellationToken));
-                    return result;
-                }
-                catch (TaskOrchestrationPlanNotFoundException ex)
-                {
-                    Trace.Error($"TaskOrchestrationPlanNotFoundException received, while attempting to raise JobCompletedEvent for job {message.JobId}. Error: {ex}");
-                    return TaskResult.Failed;
-                }
-                catch (TaskOrchestrationPlanSecurityException ex)
-                {
-                    Trace.Error($"TaskOrchestrationPlanSecurityException received, while attempting to raise JobCompletedEvent for job {message.JobId}. Error: {ex}");
-                    return TaskResult.Failed;
-                }
-                catch (Exception ex)
-                {
-                    Trace.Error($"Catch exception while attempting to raise JobCompletedEvent for job {message.JobId}, job request {message.RequestId}.");
-                    Trace.Error(ex);
-                    exceptions.Add(ex);
-                }
-
-                // delay 5 seconds before next retry.
-                await Task.Delay(TimeSpan.FromSeconds(5));
-            }
-
-            // rethrow exceptions from all attempts.
-            throw new AggregateException(exceptions);
-        }
-
-        private async Task ShutdownQueue()
-        {
-            if (_jobServerQueue != null)
-            {
-                try
-                {
-                    Trace.Info("Shutting down the job server queue.");
-                    await _jobServerQueue.ShutdownAsync();
-                }
-                catch (Exception ex)
-                {
-                    Trace.Error($"Caught exception from {nameof(JobServerQueue)}.{nameof(_jobServerQueue.ShutdownAsync)}: {ex}");
-                }
-                finally
-                {
-                    _jobServerQueue = null; // Prevent multiple attempts.
-                }
-            }
+            jobContext.Section(StringUtil.Loc("StepFinishing", jobName));
+            return jobContext.Complete(taskResult);
         }
 
         // the hostname (how the agent knows the server) is external to our server
