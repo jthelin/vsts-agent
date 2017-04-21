@@ -176,19 +176,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             VarUtil.ExpandValues(_hostContext, source, target);
         }
 
-        internal Variable GetVariable(string name)
-        {
-            Variable variable;
-            if (_expanded.TryGetValue(name, out variable))
-            {
-                _trace.Verbose($"Get '{name}': '{variable.Value}'");
-                return variable;
-            }
-
-            _trace.Verbose($"Get '{name}' (not found)");
-            return null;
-        }
-
         public string Get(string name)
         {
             Variable variable;
