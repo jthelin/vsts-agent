@@ -44,17 +44,38 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 }
                 catch (Exception ex)
                 {
-                    // Populate any exception that cause worker failure back to agent.
-                    Console.WriteLine(ex.ToString());
-                    try
+                    if (ex is AggregateException)
                     {
-                        trace.Error(ex);
+                        foreach (var inner in (ex as AggregateException).InnerExceptions)
+                        {
+                            // Populate any exception that cause worker failure back to agent.
+                            Console.WriteLine(inner.ToString());
+                            try
+                            {
+                                trace.Error(inner);
+                            }
+                            catch (Exception e)
+                            {
+                                // make sure we don't crash the app on trace error.
+                                // since IOException will throw when we run out of disk space.
+                                Console.WriteLine(e.ToString());
+                            }
+                        }
                     }
-                    catch (Exception e)
+                    else
                     {
-                        // make sure we don't crash the app on trace error.
-                        // since IOException will throw when we run out of disk space.
-                        Console.WriteLine(e.ToString());
+                        // Populate any exception that cause worker failure back to agent.
+                        Console.WriteLine(ex.ToString());
+                        try
+                        {
+                            trace.Error(ex);
+                        }
+                        catch (Exception e)
+                        {
+                            // make sure we don't crash the app on trace error.
+                            // since IOException will throw when we run out of disk space.
+                            Console.WriteLine(e.ToString());
+                        }
                     }
                 }
                 finally
