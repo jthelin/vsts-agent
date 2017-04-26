@@ -31,7 +31,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         // Initialize
         void InitializeJob(JobRequestMessage message, CancellationToken token);
         void CancelToken();
-        IExecutionContext CreateChild(Guid recordId, string name, Variables taskVariables = null);
+        IExecutionContext CreateChild(Guid recordId, string name, string refName, Variables taskVariables = null);
 
         // logging
         bool WriteDebug { get; }
@@ -126,7 +126,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             _cancellationTokenSource.Cancel();
         }
 
-        public IExecutionContext CreateChild(Guid recordId, string name, Variables taskVariables = null)
+        public IExecutionContext CreateChild(Guid recordId, string name, string refName, Variables taskVariables = null)
         {
             Trace.Entering();
 
@@ -142,7 +142,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             child.PrependPath = PrependPath;
 
             // the job timeline record is at order 1.
-            child.InitializeTimelineRecord(_mainTimelineId, recordId, _record.Id, ExecutionContextType.Task, name, _childExecutionContextCount + 2);
+            child.InitializeTimelineRecord(_mainTimelineId, recordId, _record.Id, ExecutionContextType.Task, name, refName, _childExecutionContextCount + 2);
 
             child._logger = HostContext.CreateService<IPagingLogger>();
             child._logger.Setup(_mainTimelineId, recordId);
@@ -374,6 +374,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 parentTimelineRecordId: null,
                 recordType: ExecutionContextType.Job,
                 name: message.JobName,
+                refName: message.JobRefName,
                 order: 1); // The job timeline record must be at order 1.
 
             // Logger (must be initialized before writing warnings).
@@ -428,12 +429,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             _jobServerQueue.QueueFileUpload(_mainTimelineId, _record.Id, type, name, filePath, deleteSource: false);
         }
 
-        private void InitializeTimelineRecord(Guid timelineId, Guid timelineRecordId, Guid? parentTimelineRecordId, string recordType, string name, int order)
+        private void InitializeTimelineRecord(Guid timelineId, Guid timelineRecordId, Guid? parentTimelineRecordId, string recordType, string name, string refName, int order)
         {
             _mainTimelineId = timelineId;
             _record.Id = timelineRecordId;
             _record.RecordType = recordType;
             _record.Name = name;
+            _record.RefName = refName;
             _record.Order = order;
             _record.PercentComplete = 0;
             _record.State = TimelineRecordState.Pending;

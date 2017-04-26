@@ -453,6 +453,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                     timelineRecord.FinishTime = rec.FinishTime ?? timelineRecord.FinishTime;
                     timelineRecord.Log = rec.Log ?? timelineRecord.Log;
                     timelineRecord.Name = rec.Name ?? timelineRecord.Name;
+                    timelineRecord.RefName = rec.RefName ?? timelineRecord.RefName;
                     timelineRecord.PercentComplete = rec.PercentComplete ?? timelineRecord.PercentComplete;
                     timelineRecord.RecordType = rec.RecordType ?? timelineRecord.RecordType;
                     timelineRecord.Result = rec.Result ?? timelineRecord.Result;
