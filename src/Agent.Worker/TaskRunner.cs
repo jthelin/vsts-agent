@@ -141,11 +141,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             ExecutionContext.Variables.ExpandValues(target: handlerData.Inputs);
 
             // Set output variables.
-            foreach (var outputVar in definition.Data?.OutputVariables ?? new string[0])
+            foreach (var outputVar in definition.Data?.OutputVariables ?? new OutputVariable[0])
             {
-                if (!string.IsNullOrEmpty(outputVar))
+                if (outputVar != null && !string.IsNullOrEmpty(outputVar.Name))
                 {
-                    ExecutionContext.OutputVariables.Add(outputVar);
+                    ExecutionContext.OutputVariables.Add(outputVar.Name);
                 }
             }
 

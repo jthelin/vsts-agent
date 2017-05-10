@@ -212,7 +212,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
         public void SetVariable(string name, string value, bool isSecret, bool isOutput)
         {
             ArgUtil.NotNullOrEmpty(name, nameof(name));
-            if (isOutput)
+            if (isOutput || OutputVariables.Contains(name))
             {
                 _record.Variables[name] = new VariableValue()
                 {
